@@ -1,4 +1,4 @@
-module openlist-desk
+module github.com/xxay-16/yunbo
 
 go 1.23.0
 

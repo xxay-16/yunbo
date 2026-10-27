@@ -42,3 +42,31 @@ func TestProfileRoundtripAndReplacement(t *testing.T) {
 		t.Fatal("corrupt configuration was silently ignored")
 	}
 }
+
+func TestLoadWithFallback(t *testing.T) {
+	dir := t.TempDir()
+	current := filepath.Join(dir, "yunbo", "profile.json")
+	legacy := filepath.Join(dir, "openlist-desk", "profile.json")
+	old := Profile{URL: "https://old.example.com", Username: "alice"}
+	if err := Save(legacy, old); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadWithFallback(current, legacy)
+	if err != nil || got != old {
+		t.Fatalf("legacy metadata lost: %#v, %v", got, err)
+	}
+	newProfile := Profile{URL: "https://new.example.com", Username: "bob"}
+	if err = Save(current, newProfile); err != nil {
+		t.Fatal(err)
+	}
+	got, err = LoadWithFallback(current, legacy)
+	if err != nil || got != newProfile {
+		t.Fatalf("current metadata not preferred: %#v, %v", got, err)
+	}
+	if err = os.WriteFile(current, []byte("invalid JSON"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = LoadWithFallback(current, legacy); err == nil {
+		t.Fatal("corrupt current profile was silently replaced with legacy metadata")
+	}
+}

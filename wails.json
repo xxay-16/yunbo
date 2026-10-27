@@ -1,14 +1,16 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "OpenList Desk",
-  "outputfilename": "openlist-desk",
+  "name": "yunbo",
+  "outputfilename": "yunbo",
   "frontend:dir": "frontend",
   "frontend:install": "",
   "frontend:build": "",
-  "author": { "name": "OpenList Desk contributors" },
+  "author": {
+    "name": "Yunbo contributors"
+  },
   "info": {
-    "companyName": "OpenList Desk contributors",
-    "productName": "OpenList Desk",
+    "companyName": "Yunbo contributors",
+    "productName": "云泊 · Yunbo",
     "productVersion": "0.1.0",
     "copyright": "Independent OpenList API client",
     "comments": "A desktop client for your own OpenList server"

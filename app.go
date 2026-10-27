@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"openlist-desk/internal/config"
-	"openlist-desk/internal/openlist"
-	"openlist-desk/internal/transfer"
+	"github.com/xxay-16/yunbo/internal/config"
+	"github.com/xxay-16/yunbo/internal/openlist"
+	"github.com/xxay-16/yunbo/internal/transfer"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -54,7 +54,8 @@ func (a *App) LoadProfile() (config.Profile, error) {
 	if err != nil {
 		return config.Profile{}, err
 	}
-	return config.Load(file)
+	legacy := filepath.Join(filepath.Dir(filepath.Dir(file)), "openlist-desk", "profile.json")
+	return config.LoadWithFallback(file, legacy)
 }
 
 func (a *App) Connect(req ConnectRequest) (Connection, error) {

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"openlist-desk/internal/openlist"
+	"github.com/xxay-16/yunbo/internal/openlist"
 )
 
 type Task struct {

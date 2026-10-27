@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"openlist-desk/internal/openlist"
+	"github.com/xxay-16/yunbo/internal/openlist"
 )
 
 func waitFinished(t *testing.T, m *Manager) []Task {

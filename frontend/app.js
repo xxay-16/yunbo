@@ -74,7 +74,7 @@ const state = {
 async function api(method, ...args) {
   if (!window.go?.main?.App?.[method])
     throw new Error(
-      "请通过 OpenList Desk 桌面程序打开。浏览器预览无法连接 Go 后端。",
+      "请通过 云泊 · Yunbo 桌面程序打开。浏览器预览无法连接 Go 后端。",
     );
   return window.go.main.App[method](...args);
 }

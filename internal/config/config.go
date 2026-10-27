@@ -20,7 +20,16 @@ func Location() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "openlist-desk", "profile.json"), nil
+	return filepath.Join(dir, "yunbo", "profile.json"), nil
+}
+
+// LoadWithFallback preserves the old app's connection metadata until the first
+// successful connection saves it under Yunbo's configuration directory.
+func LoadWithFallback(file, legacy string) (Profile, error) {
+	if _, err := os.Stat(file); errors.Is(err, os.ErrNotExist) {
+		return Load(legacy)
+	}
+	return Load(file)
 }
 
 func Load(file string) (Profile, error) {

@@ -1,10 +1,10 @@
-# OpenList Desk
+# 云泊 · Yunbo
 
 用 Go + Wails 2 编写的 OpenList 桌面客户端，连接你已经部署的云端服务。在独立窗口中浏览、上传、下载和管理文件。当前首版面向 Windows，界面为中文。
 
-这是独立客户端，通过 HTTP API 与 [OpenList](https://github.com/OpenListTeam/OpenList) 通信，不包含 OpenList 服务端或存储驱动，与 OpenList Team 无官方关联。
+云泊（Yunbo）是独立客户端，通过 HTTP API 与 [OpenList](https://github.com/OpenListTeam/OpenList) 通信，不包含 OpenList 服务端或存储驱动，与 OpenList Team 无官方关联。
 
-![OpenList Desk 首版界面](docs/images/preview.png)
+![云泊 · Yunbo 首版界面](docs/images/preview.png)
 
 ## 首版功能
 
@@ -37,9 +37,9 @@ go test ./...
 go vet ./...
 ```
 
-生成的程序位于 `build/bin/openlist-desk.exe`。前端使用原生 HTML/CSS/JavaScript，无需 npm 安装或前端构建步骤。Wails CLI 会生成绑定文件，运行时通过 Wails bridge 调用 Go。
+生成的程序位于 `build/bin/yunbo.exe`。前端使用原生 HTML/CSS/JavaScript，无需 npm 安装或前端构建步骤。Wails CLI 会生成绑定文件，运行时通过 Wails bridge 调用 Go。
 
-脚本使用 `-skipembedcreate`：资源目录已在仓库中，无需 Wails 自动创建，同时避开 Wails 2.11 内置旧版 `x/tools` 在本机 Go 1.27 下的资源扫描错误。也可直接执行 `wails build -clean -skipembedcreate` 或 `wails dev -skipembedcreate`。
+脚本使用 `-skipembedcreate`：资源目录已在仓库中，无需 Wails 自动创建，同时避开 Wails 2.11 内置旧版 `x/tools` 在本机 Go 1.27 下的资源扫描错误。也可直接执行 `wails build -skipembedcreate` 或 `wails dev -skipembedcreate`。构建时保留输出目录中其他名称的程序。
 
 ## 连接你的云端
 
@@ -49,7 +49,7 @@ go vet ./...
 4. 起始目录默认为 `/`，相对于当前账号的可访问根目录。受保护的起始目录可在「高级设置」输入目录密码。
 5. 连接后，点击文件夹名称进入；勾选文件即可下载、复制链接或管理。上传、下载时使用系统文件选择窗口。
 
-连接信息保存在系统配置目录：Windows 通常为 `%AppData%/openlist-desk/profile.json`。**密码、访问令牌、验证码和目录密码不会写入磁盘**，退出后需重新登录。跨公网连接请使用 HTTPS；HTTP 仅适合你信任的网络环境。API 请求由 Go 发出，无需为本客户端开放浏览器 CORS。使用系统证书验证，不跳过 TLS 校验。
+首次运行会兼容读取旧版 `openlist-desk` 目录中的连接信息，成功连接后保存到新目录。连接信息保存在系统配置目录：Windows 通常为 `%AppData%/yunbo/profile.json`。**密码、访问令牌、验证码和目录密码不会写入磁盘**，退出后需重新登录。跨公网连接请使用 HTTPS；HTTP 仅适合你信任的网络环境。API 请求由 Go 发出，无需为本客户端开放浏览器 CORS。使用系统证书验证，不跳过 TLS 校验。
 
 下载先通过 `/api/fs/get` 获取签名，再访问服务器 `/d/` 下载路由，支持存储重定向；下载请求不携带账号令牌。账号具有非 `/` 的 `base_path` 时，客户端会转换为下载路由所需的完整路径。复制的下载链接包含访问签名。
 
@@ -73,9 +73,12 @@ docs/architecture.md     接口、约束和后续路线
 
 ## Git
 
-项目使用独立的本地 Git 仓库，构建产物、日志和本地环境文件不会提交。尚未配置远程仓库。创建空的 GitHub 仓库后可执行：
+GitHub 仓库：[xxay-16/yunbo](https://github.com/xxay-16/yunbo)。
+
+构建产物、日志和本地环境文件不会提交。
 
 ```powershell
-git remote add origin https://github.com/<你的用户名>/openlist-desk.git
-git push -u origin main
+git clone https://github.com/xxay-16/yunbo.git
+cd yunbo
+.\scripts\dev.ps1
 ```

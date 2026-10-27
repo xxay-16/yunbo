@@ -15,7 +15,7 @@ var assets embed.FS
 func main() {
 	app := NewApp()
 	if err := wails.Run(&options.App{
-		Title: "OpenList Desk", Width: 1280, Height: 820, MinWidth: 940, MinHeight: 640,
+		Title: "云泊 · Yunbo", Width: 1280, Height: 820, MinWidth: 940, MinHeight: 640,
 		BackgroundColour: options.NewRGB(246, 248, 251),
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup:        app.startup, OnShutdown: app.shutdown, Bind: []interface{}{app},
