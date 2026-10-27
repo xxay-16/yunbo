@@ -21,7 +21,7 @@ func waitFinished(t *testing.T, m *Manager) []Task {
 		tasks := m.Snapshot()
 		finished := true
 		for _, task := range tasks {
-			if task.Status == "running" || task.Status == "queued" {
+			if task.Status == "running" || task.Status == "queued" || task.Status == "pausing" || task.Status == "cancelling" {
 				finished = false
 			}
 		}
@@ -166,5 +166,19 @@ func TestSafeLocalName(t *testing.T) {
 		if err := SafeLocalName(name); err != nil {
 			t.Errorf("rejected %q: %v", name, err)
 		}
+	}
+}
+
+func TestClosedManagerRejectsNewTasks(t *testing.T) {
+	m := New()
+	m.Close()
+	if _, err := m.add(context.Background(), "late", "upload", "/late", 0, func(context.Context, openlist.Progress) (string, error) {
+		t.Error("work ran after shutdown")
+		return "", nil
+	}); err == nil {
+		t.Fatal("closed manager accepted a task")
+	}
+	if m.RemainingCapacity() != 0 || len(m.Snapshot()) != 0 {
+		t.Fatal("closed manager reported writable capacity")
 	}
 }

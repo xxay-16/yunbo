@@ -12,74 +12,43 @@
     <script src="app.js" defer></script>
   </head>
   <body>
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark" data-icon="cloud"></div>
-        <div>
-          云泊 <strong>Yunbo</strong><span>你的云端文件，触手可及</span>
-        </div>
-      </div>
-      <div class="workspace-label">工作空间</div>
-      <nav aria-label="主导航">
-        <button class="nav-item active" id="nav-files">
-          <span data-icon="folder"></span>全部文件<span class="nav-dot"></span>
-        </button>
-        <button class="nav-item" id="nav-transfers">
-          <span data-icon="transfer"></span>传输中心<span
-            class="count"
-            id="transfer-count"
-            >0</span
-          >
-        </button>
-      </nav>
-      <div class="sidebar-note">
-        <div class="note-orbit" data-icon="layers"></div>
-        <h3>连接你的所有存储</h3>
-        <p>通过云端 OpenList，<br />在一个窗口管理你的文件。</p>
-      </div>
-      <div class="server-card">
-        <div class="server-icon" data-icon="server"></div>
-        <div>
-          <strong id="server-name">尚未连接</strong
-          ><span id="server-address">添加你的 OpenList 服务</span>
-        </div>
-        <i id="server-dot"></i>
-      </div>
-      <div class="sidebar-footer">
-        <span class="version">v0.1.0</span><span>独立桌面客户端</span>
-      </div>
-    </aside>
-
     <main>
       <header class="topbar">
-        <div class="workspace-heading">
-          <span>我的工作空间</span><span class="slash">/</span
-          ><strong id="view-name">全部文件</strong>
+        <h1 id="view-name" class="sr-only">全部文件</h1>
+        <div class="brand" title="云泊 Yunbo v0.3.0">
+          <div class="brand-mark" data-icon="cloud"></div>
+          <div>云泊 <strong>Yunbo</strong></div>
         </div>
-        <div class="topbar-right">
-          <span class="connection-status" id="connection-status"
-            ><i></i>未连接</span
-          ><button
-            id="connect-button"
-            class="button small"
-            data-icon-before="plug"
-          >
-            连接服务器
+        <nav aria-label="主导航">
+          <button class="nav-item active" id="nav-files">
+            <span data-icon="folder"></span>全部文件
           </button>
+          <button class="nav-item" id="nav-transfers">
+            <span data-icon="transfer"></span>传输中心<span
+              class="count"
+              id="transfer-count"
+              >0</span
+            >
+          </button>
+        </nav>
+        <div class="server-card">
+          <div>
+            <strong id="server-name">尚未连接</strong
+            ><span id="server-address">添加你的 OpenList 服务</span>
+          </div>
+          <i id="server-dot"></i>
         </div>
+        <button
+          id="connect-button"
+          class="button small"
+          data-icon-before="plug"
+        >
+          连接服务器
+        </button>
       </header>
 
       <section id="files-view" class="view">
-        <div class="page-heading">
-          <div>
-            <div class="eyebrow">YOUR CLOUD, YOUR SPACE</div>
-            <h1>全部文件<span class="heading-dot">.</span></h1>
-            <p id="files-subtitle">让分散的文件，回到一个熟悉的地方。</p>
-          </div>
-          <div class="heading-decoration" data-icon="cloud"></div>
-        </div>
-
-        <div class="file-panel">
+        <div class="file-panel" id="upload-panel">
           <div class="toolbar">
             <div class="toolbar-group">
               <button
@@ -89,6 +58,13 @@
                 disabled
               >
                 上传文件</button
+              ><button
+                class="button"
+                id="upload-folder"
+                data-icon-before="folder"
+                disabled
+              >
+                上传文件夹</button
               ><button
                 class="button"
                 id="mkdir"
@@ -121,7 +97,7 @@
                   placeholder="筛选当前页文件"
                   aria-label="筛选当前页文件"
                   disabled
-                /><kbd>/</kbd>
+                />
               </div>
             </div>
           </div>
@@ -144,7 +120,14 @@
                 disabled
               />
             </form>
-            <span class="path-hint" id="path-hint">云端目录</span>
+            <span class="path-hint" id="path-hint">云端目录</span
+            ><span class="drop-indicator" id="drop-guide-text">未连接</span>
+          </div>
+          <div class="drop-overlay" aria-hidden="true">
+            <span data-icon="upload"></span>
+            <strong>松开即可上传</strong>
+            <span>文件与文件夹将上传到当前云端目录</span>
+            <span id="drop-destination">/</span>
           </div>
           <div class="selectionbar" id="selectionbar" hidden>
             <span id="selection-label"></span>
@@ -191,32 +174,16 @@
           </div>
 
           <div class="welcome" id="welcome">
-            <div class="welcome-visual">
-              <div class="orbit orbit-one"></div>
-              <div class="orbit orbit-two"></div>
-              <div class="floating-file f-one" data-icon="file"></div>
-              <div class="floating-file f-two" data-icon="image"></div>
-              <div class="welcome-cloud" data-icon="cloud"></div>
-              <span class="tiny-spark s-one"></span
-              ><span class="tiny-spark s-two"></span>
-            </div>
-            <span class="welcome-tag">为你的私人云而生</span>
-            <h2>你的文件，随时就位。</h2>
-            <p>
-              连接已部署的 OpenList 服务，<br />像使用网盘一样浏览、上传和下载文件。
-            </p>
+            <h2>尚未连接服务器</h2>
+            <p>连接 OpenList 后即可浏览和上传文件。</p>
             <button
               class="button primary"
               id="welcome-connect"
-              data-icon-before="plus"
+              data-icon-before="plug"
             >
-              添加服务器</button
-            ><span class="welcome-footnote"
-              ><span data-icon="shield"></span
-              >密码与令牌仅保留在本次会话中</span
-            >
+              连接服务器
+            </button>
           </div>
-
           <div id="file-browser" hidden>
             <div class="table-scroll">
               <table>
@@ -278,52 +245,29 @@
             <span class="spinner"></span><span>正在读取云端文件…</span>
           </div>
         </div>
-        <div class="bottom-note">
-          <span data-icon="shield"></span
-          ><span id="bottom-note">直接连接你的服务器 · 文件传输由本机完成</span
-          ><span class="protocol">OPENLIST API</span>
-        </div>
       </section>
 
       <section id="transfers-view" class="view" hidden>
-        <div class="page-heading">
-          <div>
-            <div class="eyebrow">EVERY BYTE IN MOTION</div>
-            <h1>传输中心<span class="heading-dot">.</span></h1>
-            <p>每一份文件，都有迹可循。</p>
-          </div>
-          <button class="button" id="clear-finished" data-icon-before="check">
-            清除已结束任务
-          </button>
-        </div>
-        <div class="transfer-stats">
-          <div>
-            <span data-icon="transfer"></span>
-            <p>
-              正在传输<strong id="stats-active">0 <small>项</small></strong>
-            </p>
-          </div>
-          <div>
-            <span data-icon="check-circle"></span>
-            <p>
-              已完成<strong id="stats-completed">0 <small>项</small></strong>
-            </p>
-          </div>
-          <div>
-            <span data-icon="layers"></span>
-            <p>
-              并行任务<strong>2 <small>个</small></strong>
-            </p>
-          </div>
-        </div>
         <div class="file-panel">
           <div class="transfer-toolbar">
-            <div class="tabs" aria-label="传输筛选">
+            <div class="tabs" role="group" aria-label="传输筛选">
               <button class="active" data-transfer-filter="all">全部任务</button
               ><button data-transfer-filter="download">下载</button
               ><button data-transfer-filter="upload">上传</button>
             </div>
-            <span>关闭应用会取消未完成的任务</span>
+            <div class="transfer-controls">
+              <span class="transfer-summary"
+                ><span id="stats-active">0</span> 进行中 ·
+                <span id="stats-completed">0</span> 已完成 ·
+                <span id="stats-paused">0</span> 待继续</span
+              ><button
+                class="button"
+                id="clear-finished"
+                data-icon-before="check"
+              >
+                清除已结束
+              </button>
+            </div>
           </div>
           <div id="transfer-list"></div>
           <div id="empty-transfers" class="empty-state transfer-empty">
@@ -332,18 +276,17 @@
             <p>上传或下载文件后，可以在这里查看进度。</p>
             <button class="button" id="back-files">浏览文件</button>
           </div>
+          <div class="transfer-footer" id="transfer-notice">
+            连接原服务器和账号后，可继续已保存的任务。
+          </div>
         </div>
       </section>
-      <footer class="main-footer">
-        <span>云泊 · Yunbo</span><span>连接自由，文件随行。</span>
-      </footer>
     </main>
 
     <dialog id="connection-dialog" class="connection-dialog">
       <form id="connection-form">
         <div class="dialog-header">
           <div>
-            <div class="eyebrow">CONNECT YOUR CLOUD</div>
             <h2>连接 OpenList</h2>
           </div>
           <button

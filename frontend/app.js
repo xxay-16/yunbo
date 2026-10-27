@@ -38,6 +38,8 @@ const drawings = {
   check: '<path d="m5 12 4 4L20 5"/>',
   "check-circle": '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+  play: '<path d="m8 4 12 8-12 8Z"/>',
 };
 function icon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${drawings[name] || drawings.file}</svg>`;
@@ -70,6 +72,7 @@ const state = {
   action: null,
   actionBusy: false,
   connecting: false,
+  queuing: false,
 };
 async function api(method, ...args) {
   if (!window.go?.main?.App?.[method])
@@ -188,9 +191,24 @@ function selectedFiles() {
 }
 function updateControls() {
   const connected = !!state.connection,
-    ready = connected && !state.loading;
+    ready = connected && !state.loading && !state.queuing;
   $("#upload").disabled = !ready || !state.listing.write || !can(3);
+  $("#upload-folder").disabled = $("#upload").disabled;
   $("#mkdir").disabled = $("#upload").disabled;
+  $("#connect-button").disabled = state.queuing;
+  const dropEnabled = !$("#upload").disabled && state.view === "files";
+  $("#upload-panel").classList.toggle("drop-enabled", dropEnabled);
+  $("#drop-destination").textContent = state.path;
+  $("#drop-guide-text").textContent = state.queuing
+    ? "正在准备…"
+    : dropEnabled
+      ? "可拖放上传"
+      : connected
+        ? "拖放未启用"
+        : "未连接";
+  $("#drop-guide-text").title = dropEnabled
+    ? `拖入文件或文件夹，上传到 ${state.path}`
+    : $("#drop-guide-text").textContent;
   for (const id of ["refresh", "directory-password", "filter", "path-input"])
     $("#" + id).disabled = !ready;
   $("#up").disabled = !ready || state.path === "/";
@@ -273,10 +291,10 @@ function renderFiles() {
   $("#empty-files").hidden = files.length > 0;
   $("#empty-title").textContent = state.filter
     ? "没有匹配的文件"
-    : "这个文件夹还是空的";
+    : "文件夹为空";
   $("#empty-description").textContent = state.filter
     ? "试试其他关键词，筛选仅在当前页中进行。"
-    : "上传一些文件，开始整理你的云端空间。";
+    : "可上传文件或拖入文件夹。";
   const pages = Math.max(1, Math.ceil(state.listing.total / 100));
   $("#file-summary").textContent =
     `共 ${state.listing.total} 项${state.filter ? ` · 当前页匹配 ${files.length} 项` : ""}`;
@@ -296,23 +314,16 @@ function renderConnection() {
   $("#connect-button").lastChild.textContent = c ? "连接设置" : "连接服务器";
   $("#disconnect").hidden = !c;
   $("#server-dot").classList.toggle("online", !!c);
-  $("#connection-status").classList.toggle("online", !!c);
-  $("#connection-status").lastChild.textContent = c ? "已连接" : "未连接";
   $("#server-name").textContent = c ? c.user.username || "访客" : "尚未连接";
   $("#server-address").textContent = c
     ? c.profile.url
     : "添加你的 OpenList 服务";
   $("#server-address").title = c?.profile.url || "";
-  $("#files-subtitle").textContent = c
-    ? `${c.user.username || "访客"}，欢迎回到你的云端空间。`
-    : "让分散的文件，回到一个熟悉的地方。";
-  $("#bottom-note").textContent = c
-    ? "直接连接 " + c.profile.url
-    : "直接连接你的服务器 · 文件传输由本机完成";
   renderFiles();
+  renderTransfers();
 }
 async function loadDir(target = state.path, page = 1) {
-  if (!state.connection || state.loading) return;
+  if (!state.connection || state.loading || state.queuing) return;
   target = cleanPath(target);
   const serial = ++state.serial;
   state.loading = true;
@@ -348,6 +359,7 @@ function switchView(view) {
   $("#nav-transfers").classList.toggle("active", view === "transfers");
   $("#view-name").textContent = view === "files" ? "全部文件" : "传输中心";
   if (view === "transfers") renderTransfers();
+  updateControls();
 }
 function openConnection() {
   $("#connection-error").hidden = true;
@@ -420,7 +432,7 @@ $("#disconnect").onclick = async () => {
     $("#connection-dialog").close();
     $("#file-error").hidden = true;
     renderConnection();
-    toast("连接已断开，未完成的传输正在取消。");
+    toast("连接已断开；可续传任务已保留，普通上传已取消。");
   } catch (err) {
     toast(errorText(err), true);
   }
@@ -446,6 +458,10 @@ $("#connection-dialog").addEventListener("cancel", (event) => {
   if (state.connecting) event.preventDefault();
 });
 $("#connection-dialog").addEventListener("close", clearCredentials);
+$("#action-dialog").addEventListener("close", () => {
+  $("#action-input").value = "";
+  state.action = null;
+});
 $("#action-dialog").addEventListener("cancel", (event) => {
   if (state.actionBusy) event.preventDefault();
 });
@@ -607,21 +623,43 @@ $("#copy-link").onclick = async () => {
   }
 };
 async function queue(method, args) {
+  if (state.queuing) return;
+  const session = state.connection;
+  const target = args[0];
+  const isUpload = method.startsWith("Upload");
+  let refreshFolders = false;
+  state.queuing = true;
+  updateControls();
   try {
     const result = await api(method, ...args);
+    if (state.connection !== session) return;
     if (result.count) {
       toast(
-        `已加入 ${result.count} 个${method === "Upload" ? "上传" : "下载"}任务`,
+        `已加入 ${result.count} 个${isUpload ? "上传" : "下载"}任务${result.folders ? `，已准备 ${result.folders} 个文件夹` : ""}`,
       );
       await pollTransfers();
       switchView("transfers");
+    } else if (result.folders) {
+      toast(`已处理 ${result.folders} 个文件夹`);
+      refreshFolders = true;
     }
-    if (result.errors?.length) toast(result.errors.join("\n"), true);
+    if (result.errors?.length) {
+      const messages = result.errors.slice(0, 10);
+      if (result.errors.length > 10)
+        messages.push(`另有 ${result.errors.length - 10} 项失败`);
+      toast(messages.join("\n"), true);
+    }
   } catch (err) {
     toast(errorText(err), true);
+  } finally {
+    state.queuing = false;
+    updateControls();
+    if (refreshFolders && state.connection === session && state.path === target)
+      loadDir(target, state.page);
   }
 }
 $("#upload").onclick = () => queue("Upload", [state.path]);
+$("#upload-folder").onclick = () => queue("UploadFolder", [state.path]);
 $("#download").onclick = () =>
   queue("Download", [
     state.path,
@@ -637,97 +675,193 @@ const statusLabels = {
   completed: "已完成",
   failed: "传输失败",
   cancelled: "已取消",
+  paused: "已暂停",
+  pausing: "正在暂停",
+  cancelling: "正在取消",
 };
-function renderTransfers() {
-  const active = state.tasks.filter(
-      (t) => t.status === "queued" || t.status === "running",
-    ).length,
-    completed = state.tasks.filter((t) => t.status === "completed").length;
-  $("#transfer-count").textContent = active;
-  $("#stats-active").replaceChildren(
-    document.createTextNode(active + " "),
-    element("small", "", "项"),
-  );
-  $("#stats-completed").replaceChildren(
-    document.createTextNode(completed + " "),
-    element("small", "", "项"),
-  );
-  const tasks = state.tasks.filter(
-      (t) =>
-        state.transferFilter === "all" || t.direction === state.transferFilter,
-    ),
-    list = $("#transfer-list");
-  list.replaceChildren();
-  $("#empty-transfers").hidden = tasks.length > 0;
-  for (const task of tasks) {
-    const row = element("div", "transfer-row " + task.status),
-      fileIcon = element("span", "transfer-file");
-    fileIcon.innerHTML = icon(
-      task.direction === "upload" ? "upload" : "download",
-    );
-    const info = element("div", "transfer-info"),
-      title = element("div", "transfer-title");
-    title.append(
-      element("strong", "", task.name),
-      element(
-        "span",
-        "status " + task.status,
-        statusLabels[task.status] || task.status,
-      ),
-    );
-    const meta = element("div", "transfer-meta"),
-      percent =
-        task.status === "completed"
-          ? 100
-          : task.total > 0
-            ? Math.min(100, Math.floor((task.done / task.total) * 100))
-            : 0;
-    meta.append(
-      element(
-        "span",
-        "",
-        `${task.direction === "upload" ? "上传" : "下载"} · ${bytes(task.done)}${task.total > 0 ? " / " + bytes(task.total) : ""}`,
-      ),
-      element(
-        "span",
-        "",
-        task.status === "running" &&
-          task.done === task.total &&
-          task.direction === "upload"
-          ? "等待服务端确认"
-          : `${percent}%`,
-      ),
-    );
-    const track = element("div", "progress-track"),
-      fill = element("div", "progress-fill");
-    fill.style.width = percent + "%";
-    track.append(fill);
-    const path = element(
-      "div",
-      "transfer-path",
-      task.local_path || task.remote_path,
-    );
-    path.title = task.local_path || task.remote_path;
-    info.append(title, meta, track, path);
-    if (task.error) info.append(element("div", "transfer-error", task.error));
-    row.append(fileIcon, info);
-    if (["running", "queued"].includes(task.status)) {
-      const cancel = element("button", "icon-button");
-      cancel.innerHTML = icon("close");
-      cancel.title = "取消传输";
-      cancel.setAttribute("aria-label", `取消传输 ${task.name}`);
-      cancel.onclick = async () => {
-        try {
-          await api("CancelTransfer", task.id);
-          await pollTransfers();
-        } catch (err) {
-          toast(errorText(err), true);
-        }
-      };
-      row.append(cancel);
-    }
-    list.append(row);
+function remainingTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "剩余时间未知";
+  if (seconds < 60) return `剩余 ${Math.ceil(seconds)} 秒`;
+  if (seconds < 3600) return `剩余 ${Math.ceil(seconds / 60)} 分钟`;
+  if (seconds < 86400) {
+    const minutes = Math.ceil(seconds / 60);
+    return `剩余 ${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`;
   }
+  return `剩余约 ${(seconds / 86400).toFixed(1)} 天`;
+}
+function transferStatus(task) {
+  if (task.status === "running") {
+    if (task.phase === "checking")
+      return task.direction === "upload" && task.resumable
+        ? `校验源文件 ${task.phase_progress || 0}%`
+        : "准备中";
+    if (task.phase === "committing") return "等待服务端确认";
+  }
+  return statusLabels[task.status] || task.status;
+}
+async function transferAction(task, method, password = "") {
+  try {
+    if (method === "ResumeTransfer") await api(method, task.id, password);
+    else await api(method, task.id);
+    await pollTransfers();
+  } catch (err) {
+    toast(errorText(err), true);
+  }
+}
+function continueTransfer(task) {
+  if (task.needs_password) {
+    actionDialog({
+      title: "下载访问密码",
+      description: `文件：${task.name}\n密码仅在当前会话中保留。`,
+      password: true,
+      run: async (value) => {
+        await api("ResumeTransfer", task.id, value);
+        await pollTransfers();
+      },
+    });
+  } else transferAction(task, "ResumeTransfer");
+}
+function renderTransfers() {
+  const active = state.tasks.filter((t) =>
+    ["queued", "running", "pausing", "cancelling"].includes(t.status),
+  ).length;
+  const pending = state.tasks.filter(
+    (t) => t.status === "paused" || (t.status === "failed" && t.resumable),
+  ).length;
+  const completed = state.tasks.filter((t) => t.status === "completed").length;
+  $("#transfer-count").textContent = active + pending;
+  $("#transfer-count").title = `${active} 项进行中，${pending} 项待继续`;
+  $("#stats-active").textContent = active;
+  $("#stats-completed").textContent = completed;
+  $("#stats-paused").textContent = pending;
+  $("#transfer-notice").textContent = !state.connection
+    ? "连接原服务器和账号后，可继续已保存的任务。"
+    : state.connection.upload_resume
+      ? "续传记录保存在本机；上传续传受服务端会话有效期限制。"
+      : "当前服务器不支持上传续传，下载续传取决于文件源站。";
+  const tasks = state.tasks.filter(
+    (t) =>
+      state.transferFilter === "all" || t.direction === state.transferFilter,
+  );
+  const list = $("#transfer-list");
+  const existing = new Map(
+    [...list.children].map((row) => [Number(row.dataset.id), row]),
+  );
+  const wanted = new Set(tasks.map((t) => t.id));
+  for (const [id, row] of existing) if (!wanted.has(id)) row.remove();
+  $("#empty-transfers").hidden = tasks.length > 0;
+  tasks.forEach((task, index) => {
+    let row = existing.get(task.id);
+    if (!row) {
+      row = element("div", "transfer-row");
+      row.dataset.id = String(task.id);
+      const fileIcon = element("span", "transfer-file");
+      fileIcon.innerHTML = icon(
+        task.direction === "upload" ? "upload" : "download",
+      );
+      const info = element("div", "transfer-info");
+      const title = element("div", "transfer-title");
+      title.append(
+        element("strong", "transfer-name"),
+        element("span", "status"),
+      );
+      const meta = element("div", "transfer-meta");
+      meta.append(
+        element("span", "transfer-amount"),
+        element("span", "transfer-speed"),
+      );
+      const track = element("div", "progress-track");
+      track.append(element("div", "progress-fill"));
+      info.append(
+        title,
+        meta,
+        track,
+        element("div", "transfer-path"),
+        element("div", "transfer-error"),
+        element("div", "transfer-resume-note"),
+      );
+      row.append(fileIcon, info, element("div", "transfer-actions"));
+    }
+    row.className = "transfer-row " + task.status;
+    const name = row.querySelector(".transfer-name");
+    name.textContent = task.name;
+    name.title = task.name;
+    const status = row.querySelector(".status");
+    status.className = "status " + task.status;
+    status.textContent =
+      (!task.resumable &&
+      task.direction === "upload" &&
+      task.status === "running"
+        ? "普通上传 · "
+        : "") + transferStatus(task);
+    status.title = task.resume_reason || "";
+    const percent =
+      task.status === "completed"
+        ? 100
+        : task.total > 0
+          ? Math.min(100, Math.floor((task.done / task.total) * 100))
+          : 0;
+    row.querySelector(".transfer-amount").textContent =
+      `${task.direction === "upload" ? "上传" : "下载"} · ${bytes(task.done)}${task.total > 0 ? " / " + bytes(task.total) : ""}`;
+    const speed = row.querySelector(".transfer-speed");
+    speed.textContent =
+      task.status === "running" && task.phase === "transferring"
+        ? `${bytes(task.speed_bps || 0)}/s · ${remainingTime(task.eta_seconds)} · ${percent}%`
+        : `${percent}%`;
+    row.querySelector(".progress-fill").style.width = percent + "%";
+    const path = row.querySelector(".transfer-path");
+    path.textContent = task.local_path || task.remote_path;
+    path.title = `${task.server || ""}\n${task.remote_path}\n${task.local_path || ""}`;
+    const error = row.querySelector(".transfer-error");
+    error.textContent = task.error || "";
+    error.hidden = !task.error;
+    const note = row.querySelector(".transfer-resume-note");
+    note.textContent =
+      task.status === "paused" && !task.can_resume
+        ? task.resume_reason || "连接原服务器和账号后继续"
+        : "";
+    note.hidden = !note.textContent;
+    const actions = row.querySelector(".transfer-actions");
+    const actionKey = [
+      task.status,
+      task.can_pause,
+      task.can_resume,
+      task.resumable,
+      task.needs_password,
+      task.resume_reason,
+    ].join("|");
+    if (actions.dataset.key !== actionKey) {
+      actions.dataset.key = actionKey;
+      actions.replaceChildren();
+      if (task.can_pause) {
+        const pause = element("button", "text-button task-control", "暂停");
+        pause.title = "保留进度并暂停";
+        pause.setAttribute("aria-label", `暂停传输 ${task.name}`);
+        pause.onclick = () => transferAction(task, "PauseTransfer");
+        actions.append(pause);
+      }
+      if (task.resumable && ["paused", "failed"].includes(task.status)) {
+        const resume = element("button", "text-button task-control", "继续");
+        resume.disabled = !task.can_resume;
+        resume.title = task.can_resume
+          ? "从已确认的位置继续"
+          : task.resume_reason || "请先连接原服务器";
+        resume.setAttribute("aria-label", `继续传输 ${task.name}`);
+        resume.onclick = () => continueTransfer(task);
+        actions.append(resume);
+      }
+      if (["running", "queued", "paused", "failed"].includes(task.status)) {
+        const cancel = element("button", "icon-button");
+        cancel.innerHTML = icon("close");
+        cancel.title = "取消任务并清理临时进度";
+        cancel.setAttribute("aria-label", `取消传输 ${task.name}`);
+        cancel.onclick = () => transferAction(task, "CancelTransfer");
+        actions.append(cancel);
+      }
+    }
+    if (list.children[index] !== row)
+      list.insertBefore(row, list.children[index] || null);
+  });
 }
 async function pollTransfers() {
   if (state.pollBusy || !window.go?.main?.App) return;
@@ -801,6 +935,36 @@ document.addEventListener("keydown", (event) => {
   }
 });
 async function init() {
+  // Wails resolves real OS paths through WebView2. Browser File objects alone
+  // cannot provide these paths and must not be used as a fallback.
+  if (window.runtime?.OnFileDrop) {
+    window.runtime.OnFileDrop((x, y, paths) => {
+      if (!state.connection || state.view !== "files") return;
+      if (
+        state.loading ||
+        state.queuing ||
+        state.connecting ||
+        state.actionBusy ||
+        document.querySelector("dialog[open]")
+      ) {
+        toast("请先完成当前操作，再拖入文件。", true);
+        return;
+      }
+      if (!state.listing.write || !can(3)) {
+        toast("当前云端目录或账号没有上传权限。", true);
+        return;
+      }
+      if (Array.isArray(paths) && paths.length)
+        queue("UploadDroppedFiles", [state.path, paths]);
+    }, true);
+  }
+  // Prevent opening local files as pages, including drops outside the upload area.
+  for (const eventName of ["dragover", "drop"]) {
+    window.addEventListener(eventName, (event) => {
+      if ([...(event.dataTransfer?.types || [])].includes("Files"))
+        event.preventDefault();
+    });
+  }
   try {
     if (window.go?.main?.App) {
       const profile = await api("LoadProfile"),

@@ -11,7 +11,7 @@
   "info": {
     "companyName": "Yunbo contributors",
     "productName": "云泊 · Yunbo",
-    "productVersion": "0.1.0",
+    "productVersion": "0.3.0",
     "copyright": "Independent OpenList API client",
     "comments": "A desktop client for your own OpenList server"
   }

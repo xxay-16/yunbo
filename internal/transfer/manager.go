@@ -4,217 +4,462 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"math"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/xxay-16/yunbo/internal/openlist"
 )
 
+const MaxTasks = 200
+
 type Task struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	Direction  string `json:"direction"`
-	Status     string `json:"status"`
-	Done       int64  `json:"done"`
-	Total      int64  `json:"total"`
-	Error      string `json:"error"`
-	LocalPath  string `json:"local_path"`
-	RemotePath string `json:"remote_path"`
-	Started    int64  `json:"started"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Direction     string `json:"direction"`
+	Status        string `json:"status"`
+	Done          int64  `json:"done"`
+	Total         int64  `json:"total"`
+	Error         string `json:"error"`
+	LocalPath     string `json:"local_path"`
+	RemotePath    string `json:"remote_path"`
+	Started       int64  `json:"started"`
+	Server        string `json:"server"`
+	Account       string `json:"account"`
+	SpeedBPS      int64  `json:"speed_bps"`
+	ETASeconds    int64  `json:"eta_seconds"`
+	Resumable     bool   `json:"resumable"`
+	CanPause      bool   `json:"can_pause"`
+	CanResume     bool   `json:"can_resume"`
+	NeedsPassword bool   `json:"needs_password"`
+	ResumeReason  string `json:"resume_reason"`
+	Phase         string `json:"phase"`
+	PhaseProgress int    `json:"phase_progress"`
 }
 
+type rateSample struct {
+	at   time.Time
+	done int64
+}
 type entry struct {
 	Task
-	cancel context.CancelFunc
+	data         jobData
+	client       *openlist.Client
+	parent       context.Context
+	password     string
+	cancel       context.CancelFunc
+	active       bool
+	intent       string
+	samples      []rateSample
+	lastProgress time.Time
+	persistErr   error
+	work         func(context.Context, openlist.Progress) (string, error)
 }
 type Manager struct {
-	mu    sync.Mutex
-	tasks map[int64]*entry
-	next  int64
-	slots chan struct{}
-	wg    sync.WaitGroup
+	mu       sync.Mutex
+	tasks    map[int64]*entry
+	next     int64
+	slots    chan struct{}
+	wg       sync.WaitGroup
+	closed   bool
+	store    string
+	lastSave time.Time
 }
 
 func New() *Manager { return &Manager{tasks: map[int64]*entry{}, slots: make(chan struct{}, 2)} }
 
 func (m *Manager) add(ctx context.Context, name, direction, remote string, total int64, work func(context.Context, openlist.Progress) (string, error)) (int64, error) {
+	return m.insert(&entry{Task: Task{Name: name, Direction: direction, RemotePath: remote, Total: total}, parent: ctx, work: work})
+}
+
+func (m *Manager) insert(e *entry) (int64, error) {
 	m.mu.Lock()
-	if len(m.tasks) >= 200 {
-		m.mu.Unlock()
-		return 0, errors.New("传输列表已满，请清除已完成的任务")
+	defer m.mu.Unlock()
+	if m.closed || e.parent.Err() != nil {
+		return 0, context.Canceled
+	}
+	if len(m.tasks) >= MaxTasks {
+		return 0, errors.New("传输列表已满，请清除已结束的任务")
 	}
 	m.next++
-	id := m.next
-	ctx, cancel := context.WithCancel(ctx)
-	m.tasks[id] = &entry{Task: Task{ID: id, Name: name, Direction: direction, RemotePath: remote, Total: total, Status: "queued"}, cancel: cancel}
+	e.ID = m.next
+	e.Status = "queued"
+	e.ETASeconds = -1
+	m.tasks[e.ID] = e
+	if err := m.saveLocked(); err != nil {
+		delete(m.tasks, e.ID)
+		return 0, err
+	}
+	m.startLocked(e)
+	return e.ID, nil
+}
+
+func (m *Manager) startLocked(e *entry) {
+	ctx, cancel := context.WithCancel(e.parent)
+	e.cancel = cancel
+	e.active = true
+	e.intent = ""
+	e.persistErr = nil
+	e.Status = "queued"
+	e.Error = ""
+	e.Phase = ""
+	e.PhaseProgress = 0
+	e.samples = nil
 	m.wg.Add(1)
-	m.mu.Unlock()
-	go func() {
-		defer m.wg.Done()
-		defer cancel()
-		var err error
-		var local string
-		select {
-		case m.slots <- struct{}{}:
-			defer func() { <-m.slots }()
-			if err = ctx.Err(); err == nil {
-				m.mu.Lock()
-				m.tasks[id].Status = "running"
-				m.tasks[id].Started = time.Now().UnixMilli()
-				m.mu.Unlock()
-				local, err = work(ctx, func(done, total int64) {
-					m.mu.Lock()
-					m.tasks[id].Done = done
-					m.tasks[id].Total = total
-					m.mu.Unlock()
-				})
+	go func() { defer cancel(); m.run(e, ctx) }()
+}
+
+func (m *Manager) run(e *entry, ctx context.Context) {
+	defer m.wg.Done()
+	var err error
+	var local string
+	select {
+	case m.slots <- struct{}{}:
+		if err = ctx.Err(); err == nil {
+			m.mu.Lock()
+			if e.intent == "" {
+				e.Status = "running"
 			}
-		case <-ctx.Done():
-			err = ctx.Err()
+			if e.Started == 0 {
+				e.Started = time.Now().UnixMilli()
+			}
+			e.samples = []rateSample{{time.Now(), e.Done}}
+			m.mu.Unlock()
+			progress := func(done, total int64) { m.report(e, done, total) }
+			if e.work != nil {
+				m.phase(e, "transferring", 0)
+				local, err = e.work(ctx, progress)
+			} else {
+				local, err = m.execute(e, ctx, progress)
+			}
 		}
-		m.mu.Lock()
-		t := m.tasks[id]
-		t.LocalPath = local
-		switch {
-		case errors.Is(err, context.Canceled):
-			t.Status = "cancelled"
-		case err != nil:
-			t.Status = "failed"
-			t.Error = err.Error()
-		default:
-			t.Status = "completed"
-		}
-		m.mu.Unlock()
-	}()
-	return id, nil
+		<-m.slots
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+	m.mu.Lock()
+	if e.persistErr != nil {
+		err = e.persistErr
+	}
+	if local != "" {
+		e.LocalPath = local
+	}
+	if errors.Is(err, openlist.ErrCannotResume) {
+		e.Resumable = false
+		e.ResumeReason = err.Error()
+	}
+	var apiError *openlist.APIError
+	if e.Direction == "download" && e.data.NeedsPassword && errors.As(err, &apiError) && apiError.Code == 403 {
+		e.password = ""
+	}
+	status := "completed"
+	switch {
+	case err == nil:
+	case e.intent == "cancel":
+		status = "cancelled"
+	case e.persistErr != nil:
+		status = "failed"
+	case (errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)) && e.Resumable:
+		status = "paused"
+	case errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
+		status = "cancelled"
+	default:
+		status = "failed"
+	}
+	cleanup := status == "cancelled"
+	if err != nil && status == "failed" {
+		e.Error = err.Error()
+	}
+	m.mu.Unlock()
+	if cleanup {
+		m.cleanup(e)
+	}
+	m.mu.Lock()
+	e.Status = status
+	e.active = false
+	e.cancel = nil
+	e.samples = nil
+	e.SpeedBPS = 0
+	e.ETASeconds = -1
+	if status == "completed" {
+		e.Done = e.Total
+		e.Phase = ""
+		e.Error = ""
+	}
+	if saveErr := m.saveLocked(); saveErr != nil {
+		e.Error = "保存传输记录失败：" + saveErr.Error()
+	}
+	m.mu.Unlock()
 }
 
-func (m *Manager) Upload(ctx context.Context, c *openlist.Client, local, remote string) (int64, error) {
-	stat, err := os.Stat(local)
-	if err != nil {
-		return 0, err
+func (m *Manager) report(e *entry, done, total int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	if done != e.Done {
+		e.lastProgress = now
 	}
-	if !stat.Mode().IsRegular() {
-		return 0, errors.New("只能上传普通文件")
+	if done < e.Done || e.Phase != "transferring" {
+		e.samples = []rateSample{{now, done}}
 	}
-	return m.add(ctx, filepath.Base(local), "upload", remote, stat.Size(), func(ctx context.Context, progress openlist.Progress) (string, error) {
-		return local, c.Upload(ctx, local, remote, progress)
-	})
+	e.Done, e.Total = done, total
+	if len(e.samples) == 0 || now.Sub(e.samples[len(e.samples)-1].at) >= 250*time.Millisecond {
+		e.samples = append(e.samples, rateSample{now, done})
+	}
+	m.pruneSamplesLocked(e, now)
+	if m.store != "" && time.Since(m.lastSave) > 2*time.Second {
+		if err := m.saveLocked(); err != nil {
+			e.persistErr = err
+			if e.cancel != nil {
+				e.cancel()
+			}
+		}
+	}
 }
-
-// SafeLocalName prevents storage-provided names from becoming paths or Windows
-// device/alternate-stream names when downloading.
-func SafeLocalName(name string) error {
-	if err := openlist.ValidateName(name); err != nil {
-		return err
+func (m *Manager) phase(e *entry, phase string, progress int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e.Phase != phase {
+		e.samples = []rateSample{{time.Now(), e.Done}}
+		e.lastProgress = time.Now()
 	}
-	if strings.ContainsAny(name, "<>:\"|?*") || strings.TrimRight(name, ". ") != name {
-		return errors.New("此文件名不能保存到 Windows，请先重命名")
-	}
-	base := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
-	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || (len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9') {
-		return errors.New("文件名是 Windows 保留名称")
-	}
-	for _, r := range name {
-		if r < 32 {
-			return errors.New("文件名包含控制字符")
-		}
-	}
-	return nil
+	e.Phase, e.PhaseProgress = phase, progress
 }
-
-func (m *Manager) Download(ctx context.Context, c *openlist.Client, remote, name, password, dir string) (int64, error) {
-	if err := SafeLocalName(name); err != nil {
-		return 0, err
+func (m *Manager) pruneSamplesLocked(e *entry, now time.Time) {
+	cutoff := now.Add(-5 * time.Second)
+	i := 0
+	for i+1 < len(e.samples) && e.samples[i+1].at.Before(cutoff) {
+		i++
 	}
-	return m.add(ctx, name, "download", remote, 0, func(ctx context.Context, progress openlist.Progress) (string, error) {
-		f, err := os.CreateTemp(dir, ".openlist-*.part")
-		if err != nil {
-			return "", err
-		}
-		defer os.Remove(f.Name())
-		err = c.Download(ctx, remote, password, f, progress)
-		if closeErr := f.Close(); err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			return "", err
-		}
-		if err = ctx.Err(); err != nil {
-			return "", err
-		}
-		return publish(f.Name(), dir, name)
-	})
-}
-
-func publish(temp, dir, name string) (string, error) {
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	for i := 0; i < 10000; i++ {
-		candidate := name
-		if i > 0 {
-			candidate = fmt.Sprintf("%s (%d)%s", stem, i, ext)
-		}
-		dst := filepath.Join(dir, candidate)
-		// Reserve exclusively so parallel jobs and existing user files cannot be overwritten.
-		reservation, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if errors.Is(err, os.ErrExist) {
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		if err = reservation.Close(); err != nil {
-			os.Remove(dst)
-			return "", err
-		}
-		if err = os.Rename(temp, dst); err != nil {
-			os.Remove(dst)
-			return "", err
-		}
-		return dst, nil
+	if i > 0 {
+		e.samples = append([]rateSample(nil), e.samples[i:]...)
 	}
-	return "", errors.New("同名下载文件过多，请选择其他目录")
 }
-
+func (m *Manager) snapshotLocked(e *entry, now time.Time) Task {
+	t := e.Task
+	t.SpeedBPS = 0
+	t.ETASeconds = -1
+	t.CanPause = false
+	t.CanResume = false
+	t.NeedsPassword = e.data.NeedsPassword && e.password == ""
+	if t.Status == "running" && t.Phase == "transferring" && len(e.samples) > 0 && now.Sub(e.lastProgress) < 5*time.Second {
+		m.pruneSamplesLocked(e, now)
+		base := e.samples[0]
+		seconds := now.Sub(base.at).Seconds()
+		if seconds >= 0.25 && t.Done >= base.done {
+			t.SpeedBPS = int64(float64(t.Done-base.done) / seconds)
+		}
+		if t.SpeedBPS > 0 && t.Total >= t.Done {
+			t.ETASeconds = int64(math.Ceil(float64(t.Total-t.Done) / float64(t.SpeedBPS)))
+		}
+	}
+	t.CanPause = t.Resumable && (t.Status == "running" || t.Status == "queued") && e.intent == ""
+	if t.Resumable && !e.active && (t.Status == "paused" || t.Status == "failed") {
+		if e.client != nil && e.parent != nil && e.parent.Err() == nil {
+			t.CanResume = t.Direction != "upload" || e.client.UploadResume
+			if !t.CanResume {
+				t.ResumeReason = e.client.UploadResumeReason
+			}
+		} else {
+			t.ResumeReason = "连接创建此任务的服务器和账号后可继续"
+		}
+	}
+	return t
+}
 func (m *Manager) Snapshot() []Task {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	now := time.Now()
 	result := make([]Task, 0, len(m.tasks))
-	for _, t := range m.tasks {
-		result = append(result, t.Task)
+	for _, e := range m.tasks {
+		result = append(result, m.snapshotLocked(e, now))
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID > result[j].ID })
 	return result
 }
 
+func (m *Manager) Pause(id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.tasks[id]
+	if e == nil {
+		return errors.New("任务不存在")
+	}
+	if !e.Resumable {
+		return errors.New(e.ResumeReason)
+	}
+	if !e.active || (e.Status != "queued" && e.Status != "running") {
+		return errors.New("该任务当前不能暂停")
+	}
+	e.intent = "pause"
+	e.Status = "pausing"
+	e.cancel()
+	return nil
+}
+func (m *Manager) Resume(ctx context.Context, c *openlist.Client, id int64, password string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.tasks[id]
+	if e == nil {
+		return errors.New("任务不存在")
+	}
+	if m.closed || ctx.Err() != nil {
+		return context.Canceled
+	}
+	if e.active || (e.Status != "paused" && e.Status != "failed") || !e.Resumable {
+		return errors.New("该任务当前无法续传")
+	}
+	if e.Server != c.Address() || e.Account != c.User.Username {
+		return errors.New("请连接创建此任务的服务器和账号")
+	}
+	if e.Direction == "upload" && !c.UploadResume {
+		return errors.New(c.UploadResumeReason)
+	}
+	if password != "" {
+		e.password = password
+	}
+	if e.data.NeedsPassword && e.password == "" {
+		return errors.New("此下载需要目录访问密码")
+	}
+	e.parent, e.client = ctx, c
+	if err := m.saveLocked(); err != nil {
+		return err
+	}
+	m.startLocked(e)
+	return nil
+}
 func (m *Manager) Cancel(id int64) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if t := m.tasks[id]; t != nil {
-		t.cancel()
+	e := m.tasks[id]
+	if m.closed || e == nil || e.Status == "completed" || e.Status == "cancelled" {
+		m.mu.Unlock()
+		return
 	}
+	if e.active {
+		e.intent = "cancel"
+		e.Status = "cancelling"
+		e.cancel()
+		m.mu.Unlock()
+		return
+	}
+	e.active = true
+	e.Status = "cancelling"
+	e.Error = ""
+	m.wg.Add(1)
+	m.mu.Unlock()
+	go func() {
+		defer m.wg.Done()
+		m.cleanup(e)
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		e.active = false
+		e.Status = "cancelled"
+		m.saveLocked()
+	}()
 }
-
-func (m *Manager) ClearFinished() {
+func (m *Manager) BindClient(ctx context.Context, c *openlist.Client) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for id, t := range m.tasks {
-		if t.Status != "running" && t.Status != "queued" {
-			delete(m.tasks, id)
+	for _, e := range m.tasks {
+		if c != nil && e.Server == c.Address() && e.Account == c.User.Username {
+			e.client, e.parent = c, ctx
+		} else {
+			e.client = nil
+			e.password = ""
 		}
 	}
 }
 
+// Keep live multipart checkpoints from expiring while the client is paused and
+// still connected. Server restarts and offline expiration cannot be prevented.
+func (m *Manager) KeepAlive() {
+	type pending struct {
+		ctx context.Context
+		c   *openlist.Client
+		id  string
+	}
+	m.mu.Lock()
+	var requests []pending
+	if !m.closed {
+		for _, e := range m.tasks {
+			if !e.active && e.Resumable && (e.Status == "paused" || e.Status == "failed") && e.data.UploadID != "" && e.client != nil && e.parent != nil && e.parent.Err() == nil {
+				requests = append(requests, pending{e.parent, e.client, e.data.UploadID})
+			}
+		}
+	}
+	m.mu.Unlock()
+	for _, request := range requests {
+		request.c.MultipartStatus(request.ctx, request.id, "", 0)
+	}
+}
+func (m *Manager) ClearFinished() error {
+	m.mu.Lock()
+	var removed []*entry
+	for id, e := range m.tasks {
+		if !e.active && (e.Status == "completed" || e.Status == "cancelled" || (e.Status == "failed" && !e.Resumable)) {
+			delete(m.tasks, id)
+			removed = append(removed, e)
+		}
+	}
+	err := m.saveLocked()
+	if err != nil {
+		for _, e := range removed {
+			m.tasks[e.ID] = e
+		}
+		m.mu.Unlock()
+		return err
+	}
+	m.mu.Unlock()
+	for _, e := range removed {
+		if e.Status != "completed" {
+			m.cleanup(e)
+		}
+	}
+	return nil
+}
 func (m *Manager) Close() {
 	m.mu.Lock()
-	for _, t := range m.tasks {
-		t.cancel()
+	m.closed = true
+	for _, e := range m.tasks {
+		if e.active && e.cancel != nil {
+			if e.intent == "" && e.Resumable {
+				e.intent = "pause"
+			}
+			e.cancel()
+		}
 	}
 	m.mu.Unlock()
 	m.wg.Wait()
+	m.mu.Lock()
+	m.saveLocked()
+	m.mu.Unlock()
+}
+func (m *Manager) RemainingCapacity() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return 0
+	}
+	return MaxTasks - len(m.tasks)
+}
+
+func (m *Manager) checkpoint(e *entry, update func(*jobData)) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	update(&e.data)
+	return m.saveLocked()
+}
+func (m *Manager) disableResume(e *entry, reason string) {
+	m.mu.Lock()
+	e.Resumable = false
+	e.ResumeReason = reason
+	m.mu.Unlock()
+}
+func isSessionMissing(err error) bool {
+	var api *openlist.APIError
+	return errors.As(err, &api) && api.Code == 404
+}
+func cannotResume(message string) error {
+	return fmt.Errorf("%w：%s", openlist.ErrCannotResume, message)
 }

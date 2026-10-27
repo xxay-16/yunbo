@@ -63,11 +63,19 @@ func (e *APIError) Error() string {
 }
 
 type Client struct {
-	base     *url.URL
-	token    string
-	User     User
-	api      *http.Client
-	transfer *http.Client
+	base               *url.URL
+	token              string
+	User               User
+	api                *http.Client
+	transfer           *http.Client
+	UploadResume       bool
+	UploadResumeReason string
+}
+
+type HTTPError struct{ Status int }
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("服务器返回 HTTP %d，请检查地址、反向代理或服务状态", e.Status)
 }
 
 func New(address, token string) (*Client, error) {
@@ -121,7 +129,7 @@ func requestError(err error) error {
 func decodeResponse(resp *http.Response, out any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("服务器返回 HTTP %d，请检查地址、反向代理或服务状态", resp.StatusCode)
+		return &HTTPError{Status: resp.StatusCode}
 	}
 	var envelope struct {
 		Code    int             `json:"code"`
@@ -291,6 +299,10 @@ func (c *Client) Upload(ctx context.Context, local, remote string, progress Prog
 		return err
 	}
 	defer f.Close()
+	return c.UploadFile(ctx, f, remote, progress)
+}
+
+func (c *Client) UploadFile(ctx context.Context, f *os.File, remote string, progress Progress) error {
 	stat, err := f.Stat()
 	if err != nil {
 		return err
@@ -304,6 +316,9 @@ func (c *Client) Upload(ctx context.Context, local, remote string, progress Prog
 		return err
 	}
 	req.ContentLength = stat.Size()
+	if stat.Size() == 0 {
+		req.Body = http.NoBody
+	}
 	req.Header.Set("Authorization", c.token)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("File-Path", url.PathEscape(CleanPath(remote)))
