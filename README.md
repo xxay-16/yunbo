@@ -1,12 +1,24 @@
 # 云泊 · Yunbo
 
-用 Go + Wails 2 编写的 OpenList 桌面客户端，连接你已经部署的云端服务。在独立窗口中浏览、上传、下载和管理文件。当前首版面向 Windows，界面为中文。
+用 Go + Wails 2 编写的 OpenList 桌面客户端，连接你已经部署的云端服务。在独立窗口中浏览、上传、下载和管理文件。支持 Windows 和 macOS，界面为中文。
 
 云泊（Yunbo）是独立客户端，通过 HTTP API 与 [OpenList](https://github.com/OpenListTeam/OpenList) 通信，不包含 OpenList 服务端或存储驱动，与 OpenList Team 无官方关联。
 
 ![云泊 · Yunbo 文件管理界面](docs/images/preview.png)
 
 截图使用本地测试服务中的示例目录。
+
+## 下载安装
+
+在 [GitHub Releases](https://github.com/xxay-16/yunbo/releases/latest) 下载：
+
+| 系统 | 安装包 | 安装方式 |
+| --- | --- | --- |
+| Windows 10/11 x64 | `yunbo-版本-windows-amd64-setup.exe` | 安装到当前用户目录，创建桌面与开始菜单快捷方式；缺少 WebView2 时联网安装运行时 |
+| Windows 10/11 x64 | `yunbo-版本-windows-amd64-portable.zip` | 解压后运行 `yunbo.exe`，需要 WebView2 |
+| macOS 13+，Intel / Apple Silicon | `yunbo-版本-macos-universal.dmg` | 将「云泊」拖入 Applications |
+
+每次版本发布附带 `SHA256SUMS.txt`。当前安装包没有商业代码签名，Mac 包作 ad-hoc 签名且未经过 Apple 公证；首次打开的来源提示可参照 [Apple 官方说明](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac)。卸载 Windows 版本会保留连接配置、续传记录与用户文件。
 
 ## 当前功能（v0.3.0）
 
@@ -49,6 +61,24 @@ go vet ./...
 
 脚本使用 `-skipembedcreate`：资源目录已在仓库中，无需 Wails 自动创建，同时避开 Wails 2.11 内置旧版 `x/tools` 在本机 Go 1.27 下的资源扫描错误。也可直接执行 `wails build -skipembedcreate` 或 `wails dev -skipembedcreate`。构建时保留输出目录中其他名称的程序。
 
+### 安装包与自动发布
+
+GitHub Actions 使用 Go 1.27 和 Wails 2.11，在 Windows 与 macOS runner 上构建。推送 `main`、提交 PR 或手动运行 [Build installers](https://github.com/xxay-16/yunbo/actions/workflows/build.yml) 后，可在该次运行的 Artifacts 下载产物（保留 14 天）。
+
+本地打包命令，输出位于 `dist/`：
+
+```powershell
+# Windows，需要 NSIS 的 makensis 位于 PATH
+.\scripts\package-windows.ps1
+```
+
+```bash
+# macOS，需要 Xcode command line tools 和 Wails
+bash scripts/package-macos.sh
+```
+
+发布新版时，先更新 `wails.json` 的 `info.productVersion` 和 `docs/release-notes.md`，提交后推送同名版本标签，例如 `git tag v0.3.0`、`git push origin v0.3.0`。标签必须与配置版本一致。两个平台测试和打包全部成功后，Actions 自动创建 Release，上传安装包、免安装包和校验值；普通分支构建不会创建 Release。
+
 ## 连接你的云端
 
 1. 启动程序，点击「添加服务器」。
@@ -89,7 +119,7 @@ docs/architecture.md     接口、约束和后续路线
 
 ## 当前边界
 
-当前版本没有本地目录自动同步、虚拟磁盘挂载、整文件夹下载、托盘、自启动或安装包。不支持续传的普通传输在断开连接、切换服务器或关闭应用时取消。取消上传时，远端存储是否保留已经接收的内容由 OpenList 和存储驱动决定。服务端可能分批执行批量删除，遇到失败时应刷新目录核对实际结果。
+当前版本没有本地目录自动同步、虚拟磁盘挂载、整文件夹下载、托盘或自启动。不支持续传的普通传输在断开连接、切换服务器或关闭应用时取消。取消上传时，远端存储是否保留已经接收的内容由 OpenList 和存储驱动决定。服务端可能分批执行批量删除，遇到失败时应刷新目录核对实际结果。
 
 拖放使用 Wails 的系统文件路径解析，仅在桌面程序中可用；普通浏览器预览不支持拖放上传。单次上传会先检查本机路径、同名目标冲突和剩余队列容量，最多保留 200 个传输记录，文件夹扫描上限为 4096 个项目。不跟随符号链接；队列满时请先清除已结束任务。同名远端文件仍拒绝覆盖。
 

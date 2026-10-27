@@ -2,6 +2,9 @@
 /frontend/wailsjs/
 /node_modules/
 /test-results/
+/dist/
+/build/windows/installer/wails_tools.nsh
+/build/windows/installer/tmp/
 *.exe
 *.syso
 *.log
