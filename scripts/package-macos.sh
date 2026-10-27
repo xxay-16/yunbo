@@ -19,7 +19,7 @@ wails build -skipembedcreate -trimpath -platform darwin/universal -o yunbo
 app="build/bin/yunbo.app"
 test -d "$app"
 plutil -lint "$app/Contents/Info.plist"
-lipo -verify_arch x86_64 arm64 "$app/Contents/MacOS/yunbo"
+lipo "$app/Contents/MacOS/yunbo" -verify_arch x86_64 arm64
 # Apple Silicon requires an ad-hoc signature. Developer ID notarization needs
 # a publisher-owned Apple certificate and is not claimed by this build.
 codesign --force --deep --sign - "$app"
