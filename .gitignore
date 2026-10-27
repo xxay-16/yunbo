@@ -1,0 +1,12 @@
+/build/bin/
+/frontend/wailsjs/
+/node_modules/
+/test-results/
+*.exe
+*.syso
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

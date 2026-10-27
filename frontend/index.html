@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws:; object-src 'none'; base-uri 'none'"
+    />
+    <title>OpenList Desk</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" data-icon="cloud"></div>
+        <div>
+          OpenList <strong>Desk</strong><span>你的云端文件，触手可及</span>
+        </div>
+      </div>
+      <div class="workspace-label">工作空间</div>
+      <nav aria-label="主导航">
+        <button class="nav-item active" id="nav-files">
+          <span data-icon="folder"></span>全部文件<span class="nav-dot"></span>
+        </button>
+        <button class="nav-item" id="nav-transfers">
+          <span data-icon="transfer"></span>传输中心<span
+            class="count"
+            id="transfer-count"
+            >0</span
+          >
+        </button>
+      </nav>
+      <div class="sidebar-note">
+        <div class="note-orbit" data-icon="layers"></div>
+        <h3>连接你的所有存储</h3>
+        <p>通过云端 OpenList，<br />在一个窗口管理你的文件。</p>
+      </div>
+      <div class="server-card">
+        <div class="server-icon" data-icon="server"></div>
+        <div>
+          <strong id="server-name">尚未连接</strong
+          ><span id="server-address">添加你的 OpenList 服务</span>
+        </div>
+        <i id="server-dot"></i>
+      </div>
+      <div class="sidebar-footer">
+        <span class="version">v0.1.0</span><span>独立桌面客户端</span>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div class="workspace-heading">
+          <span>我的工作空间</span><span class="slash">/</span
+          ><strong id="view-name">全部文件</strong>
+        </div>
+        <div class="topbar-right">
+          <span class="connection-status" id="connection-status"
+            ><i></i>未连接</span
+          ><button
+            id="connect-button"
+            class="button small"
+            data-icon-before="plug"
+          >
+            连接服务器
+          </button>
+        </div>
+      </header>
+
+      <section id="files-view" class="view">
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">YOUR CLOUD, YOUR SPACE</div>
+            <h1>全部文件<span class="heading-dot">.</span></h1>
+            <p id="files-subtitle">让分散的文件，回到一个熟悉的地方。</p>
+          </div>
+          <div class="heading-decoration" data-icon="cloud"></div>
+        </div>
+
+        <div class="file-panel">
+          <div class="toolbar">
+            <div class="toolbar-group">
+              <button
+                class="button primary"
+                id="upload"
+                data-icon-before="upload"
+                disabled
+              >
+                上传文件</button
+              ><button
+                class="button"
+                id="mkdir"
+                data-icon-before="folder-plus"
+                disabled
+              >
+                新建文件夹</button
+              ><button
+                class="icon-button"
+                id="refresh"
+                title="重新读取目录"
+                aria-label="重新读取目录"
+                data-icon="refresh"
+                disabled
+              ></button>
+            </div>
+            <div class="toolbar-group">
+              <button
+                class="icon-button"
+                id="directory-password"
+                title="设置目录访问密码"
+                aria-label="设置目录访问密码"
+                data-icon="lock"
+                disabled
+              ></button>
+              <div class="search">
+                <span data-icon="search"></span
+                ><input
+                  id="filter"
+                  placeholder="筛选当前页文件"
+                  aria-label="筛选当前页文件"
+                  disabled
+                /><kbd>/</kbd>
+              </div>
+            </div>
+          </div>
+          <div class="pathbar">
+            <button
+              class="icon-button"
+              id="up"
+              data-icon="up"
+              title="上一级"
+              aria-label="上一级"
+              disabled
+            ></button
+            ><span class="path-divider"></span>
+            <form id="path-form">
+              <span data-icon="folder"></span
+              ><input
+                id="path-input"
+                aria-label="目录路径，按回车进入"
+                value="/"
+                disabled
+              />
+            </form>
+            <span class="path-hint" id="path-hint">云端目录</span>
+          </div>
+          <div class="selectionbar" id="selectionbar" hidden>
+            <span id="selection-label"></span>
+            <div>
+              <button
+                class="text-button"
+                id="download"
+                data-icon-before="download"
+              >
+                下载</button
+              ><button
+                class="text-button"
+                id="copy-link"
+                data-icon-before="link"
+              >
+                复制链接</button
+              ><button class="text-button" id="rename" data-icon-before="edit">
+                重命名</button
+              ><button
+                class="text-button danger-text"
+                id="remove"
+                data-icon-before="trash"
+              >
+                删除</button
+              ><button
+                class="icon-button"
+                id="clear-selection"
+                aria-label="取消选择"
+                title="取消选择"
+                data-icon="close"
+              ></button>
+            </div>
+          </div>
+          <div class="error-banner" id="file-error" role="alert" hidden>
+            <span id="file-error-text"></span
+            ><button id="error-password" class="text-button">
+              输入目录密码</button
+            ><button
+              class="icon-button"
+              id="dismiss-error"
+              data-icon="close"
+              aria-label="关闭错误提示"
+            ></button>
+          </div>
+
+          <div class="welcome" id="welcome">
+            <div class="welcome-visual">
+              <div class="orbit orbit-one"></div>
+              <div class="orbit orbit-two"></div>
+              <div class="floating-file f-one" data-icon="file"></div>
+              <div class="floating-file f-two" data-icon="image"></div>
+              <div class="welcome-cloud" data-icon="cloud"></div>
+              <span class="tiny-spark s-one"></span
+              ><span class="tiny-spark s-two"></span>
+            </div>
+            <span class="welcome-tag">为你的私人云而生</span>
+            <h2>你的文件，随时就位。</h2>
+            <p>
+              连接已部署的 OpenList 服务，<br />像使用网盘一样浏览、上传和下载文件。
+            </p>
+            <button
+              class="button primary"
+              id="welcome-connect"
+              data-icon-before="plus"
+            >
+              添加服务器</button
+            ><span class="welcome-footnote"
+              ><span data-icon="shield"></span
+              >密码与令牌仅保留在本次会话中</span
+            >
+          </div>
+
+          <div id="file-browser" hidden>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="check-col">
+                      <input
+                        type="checkbox"
+                        id="select-all"
+                        aria-label="选择当前页所有可见文件"
+                      />
+                    </th>
+                    <th>
+                      <button class="sort-button" data-sort="name">
+                        文件名 <span id="sort-name">↑</span>
+                      </button>
+                    </th>
+                    <th class="size-col">
+                      <button class="sort-button" data-sort="size">
+                        大小 <span id="sort-size"></span>
+                      </button>
+                    </th>
+                    <th class="date-col">
+                      <button class="sort-button" data-sort="modified">
+                        修改时间 <span id="sort-modified"></span>
+                      </button>
+                    </th>
+                    <th class="type-col">类型</th>
+                  </tr>
+                </thead>
+                <tbody id="file-list"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="empty-files" hidden>
+              <span data-icon="folder"></span>
+              <h3 id="empty-title">这个文件夹还是空的</h3>
+              <p id="empty-description">上传一些文件，开始整理你的云端空间。</p>
+            </div>
+            <div class="pagination">
+              <span id="file-summary"></span>
+              <div>
+                <button
+                  id="prev-page"
+                  class="icon-button"
+                  data-icon="left"
+                  aria-label="上一页"
+                ></button
+                ><span id="page-label">1 / 1</span
+                ><button
+                  id="next-page"
+                  class="icon-button"
+                  data-icon="right"
+                  aria-label="下一页"
+                ></button>
+              </div>
+            </div>
+          </div>
+          <div id="loading" class="loading-overlay" hidden>
+            <span class="spinner"></span><span>正在读取云端文件…</span>
+          </div>
+        </div>
+        <div class="bottom-note">
+          <span data-icon="shield"></span
+          ><span id="bottom-note">直接连接你的服务器 · 文件传输由本机完成</span
+          ><span class="protocol">OPENLIST API</span>
+        </div>
+      </section>
+
+      <section id="transfers-view" class="view" hidden>
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">EVERY BYTE IN MOTION</div>
+            <h1>传输中心<span class="heading-dot">.</span></h1>
+            <p>每一份文件，都有迹可循。</p>
+          </div>
+          <button class="button" id="clear-finished" data-icon-before="check">
+            清除已结束任务
+          </button>
+        </div>
+        <div class="transfer-stats">
+          <div>
+            <span data-icon="transfer"></span>
+            <p>
+              正在传输<strong id="stats-active">0 <small>项</small></strong>
+            </p>
+          </div>
+          <div>
+            <span data-icon="check-circle"></span>
+            <p>
+              已完成<strong id="stats-completed">0 <small>项</small></strong>
+            </p>
+          </div>
+          <div>
+            <span data-icon="layers"></span>
+            <p>
+              并行任务<strong>2 <small>个</small></strong>
+            </p>
+          </div>
+        </div>
+        <div class="file-panel">
+          <div class="transfer-toolbar">
+            <div class="tabs" aria-label="传输筛选">
+              <button class="active" data-transfer-filter="all">全部任务</button
+              ><button data-transfer-filter="download">下载</button
+              ><button data-transfer-filter="upload">上传</button>
+            </div>
+            <span>关闭应用会取消未完成的任务</span>
+          </div>
+          <div id="transfer-list"></div>
+          <div id="empty-transfers" class="empty-state transfer-empty">
+            <span data-icon="transfer"></span>
+            <h3>还没有传输任务</h3>
+            <p>上传或下载文件后，可以在这里查看进度。</p>
+            <button class="button" id="back-files">浏览文件</button>
+          </div>
+        </div>
+      </section>
+      <footer class="main-footer">
+        <span>OpenList Desk</span><span>连接自由，文件随行。</span>
+      </footer>
+    </main>
+
+    <dialog id="connection-dialog" class="connection-dialog">
+      <form id="connection-form">
+        <div class="dialog-header">
+          <div>
+            <div class="eyebrow">CONNECT YOUR CLOUD</div>
+            <h2>连接 OpenList</h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button dialog-close"
+            data-icon="close"
+            aria-label="关闭"
+          ></button>
+        </div>
+        <p class="dialog-description">填写你已经部署的 OpenList 服务地址。</p>
+        <label
+          >服务器地址<input
+            name="url"
+            type="url"
+            placeholder="https://cloud.example.com"
+            required
+            autocomplete="url"
+        /></label>
+        <div class="field-help" id="http-help">
+          支持域名、IP 地址和子路径部署。
+        </div>
+        <label
+          >登录方式<select name="auth_mode">
+            <option value="password">账号密码</option>
+            <option value="token">访问令牌</option>
+            <option value="guest">访客访问</option>
+          </select></label
+        >
+        <div id="password-fields">
+          <label
+            >用户名<input
+              name="username"
+              autocomplete="username"
+              placeholder="你的 OpenList 用户名" /></label
+          ><label
+            >密码<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              placeholder="输入登录密码" /></label
+          ><label
+            >两步验证码 <span class="optional">可选</span
+            ><input
+              name="otp"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              placeholder="已开启两步验证时填写"
+          /></label>
+        </div>
+        <div id="token-fields" hidden>
+          <label
+            >访问令牌<input
+              name="token"
+              type="password"
+              autocomplete="off"
+              placeholder="粘贴 OpenList 访问令牌"
+          /></label>
+        </div>
+        <details>
+          <summary>高级设置</summary>
+          <label
+            >起始目录<input
+              name="start_path"
+              value="/"
+              placeholder="/"
+              autocomplete="off" /></label
+          ><label
+            >目录访问密码 <span class="optional">可选</span
+            ><input
+              name="directory_password"
+              type="password"
+              autocomplete="off"
+              placeholder="起始目录受密码保护时填写"
+          /></label>
+        </details>
+        <div class="form-error" id="connection-error" role="alert" hidden></div>
+        <div class="security-note">
+          <span data-icon="shield"></span
+          ><span
+            >仅记住服务地址、用户名和起始目录。<br />不保存密码、令牌和验证码。</span
+          >
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="button" id="disconnect" hidden>
+            断开连接</button
+          ><button
+            type="submit"
+            class="button primary"
+            id="submit-connect"
+            data-icon-before="plug"
+          >
+            连接服务器
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="action-dialog" class="action-dialog">
+      <form id="action-form">
+        <div class="dialog-header">
+          <h2 id="action-title"></h2>
+          <button
+            type="button"
+            class="icon-button dialog-close"
+            data-icon="close"
+            aria-label="关闭"
+          ></button>
+        </div>
+        <p id="action-description" class="dialog-description"></p>
+        <label id="action-field"
+          >名称<input id="action-input" autocomplete="off" required
+        /></label>
+        <div class="form-error" id="action-error" role="alert" hidden></div>
+        <div class="dialog-actions">
+          <button type="button" class="button dialog-close">取消</button
+          ><button type="submit" class="button primary" id="action-submit">
+            确定
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+  </body>
+</html>
