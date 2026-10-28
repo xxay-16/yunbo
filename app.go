@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	goruntime "runtime"
+	"sync"
+	"sync/atomic"
 
 	"github.com/xxay-16/yunbo/internal/clientapp"
 	"github.com/xxay-16/yunbo/internal/config"
@@ -13,12 +16,28 @@ import (
 )
 
 type App struct {
-	ctx     context.Context
-	service *clientapp.Service
-	initErr error
+	ctx               context.Context
+	service           *clientapp.Service
+	initErr           error
+	desktopMu         sync.Mutex
+	trayOnce          sync.Once
+	stopTray          func()
+	trayReady         atomic.Bool
+	exiting           atomic.Bool
+	closeToBackground bool
+	windowHide        func(context.Context)
+	windowShow        func(context.Context)
+	windowQuit        func(context.Context)
 }
 
-func NewApp() *App { return &App{} }
+func NewApp() *App {
+	return &App{
+		closeToBackground: goruntime.GOOS != "darwin",
+		windowHide:        runtime.WindowHide,
+		windowShow:        showWindow,
+		windowQuit:        runtime.Quit,
+	}
+}
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	profile, err := config.Location()
@@ -29,6 +48,14 @@ func (a *App) startup(ctx context.Context) {
 	a.service = clientapp.New(ctx, profile)
 }
 func (a *App) shutdown(context.Context) {
+	a.exiting.Store(true)
+	a.trayReady.Store(false)
+	a.desktopMu.Lock()
+	stop := a.stopTray
+	a.desktopMu.Unlock()
+	if stop != nil {
+		stop()
+	}
 	if a.service != nil {
 		a.service.Close()
 	}

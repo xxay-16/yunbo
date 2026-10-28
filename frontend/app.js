@@ -40,6 +40,7 @@ const drawings = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   play: '<path d="m8 4 12 8-12 8Z"/>',
+  background: '<path d="M4 15v5h16v-5M12 3v12m-5-5 5 5 5-5"/>',
 };
 function icon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${drawings[name] || drawings.file}</svg>`;
@@ -918,6 +919,20 @@ $("#nav-files").onclick = () => {
 };
 $("#nav-transfers").onclick = () => switchView("transfers");
 $("#back-files").onclick = () => switchView("files");
+$("#background-button").onclick = async () => {
+  try {
+    await api("HideToTray");
+  } catch (err) {
+    toast(errorText(err), true);
+  }
+};
+$("#open-config").onclick = async () => {
+  try {
+    await api("OpenConfigDirectory");
+  } catch (err) {
+    toast(errorText(err), true);
+  }
+};
 document.addEventListener("keydown", (event) => {
   if (
     event.key === "/" &&

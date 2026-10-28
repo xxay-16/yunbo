@@ -15,7 +15,7 @@
     <main>
       <header class="topbar">
         <h1 id="view-name" class="sr-only">全部文件</h1>
-        <div class="brand" title="云泊 Yunbo v0.3.0">
+        <div class="brand" title="云泊 Yunbo v0.3.1">
           <div class="brand-mark" data-icon="cloud"></div>
           <div>云泊 <strong>Yunbo</strong></div>
         </div>
@@ -45,6 +45,13 @@
         >
           连接服务器
         </button>
+        <button
+          id="background-button"
+          class="icon-button"
+          data-icon="background"
+          title="收进后台，传输继续（关闭窗口也会收进后台）"
+          aria-label="收进后台，继续传输"
+        ></button>
       </header>
 
       <section id="files-view" class="view">
@@ -370,6 +377,9 @@
           >
         </div>
         <div class="dialog-actions">
+          <button type="button" class="button" id="open-config">
+            打开配置目录
+          </button>
           <button type="button" class="button" id="disconnect" hidden>
             断开连接</button
           ><button
