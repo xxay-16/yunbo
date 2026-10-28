@@ -63,15 +63,20 @@ func New(application fyne.App, service *clientapp.Service, profilePath string) *
 	u.status = widget.NewLabel("连接 OpenList 后即可浏览文件，文件和文件夹可直接拖入窗口上传")
 	u.status.Truncation = fyne.TextTruncateEllipsis
 	u.connect = widget.NewButtonWithIcon("连接设置", theme.SettingsIcon(), u.connectionDialog)
-	background := widget.NewButtonWithIcon("", theme.ComputerIcon(), func() { u.Window.Hide() })
+	background := widget.NewButtonWithIcon("后台", theme.ComputerIcon(), func() { u.Window.Hide() })
 	header := container.NewBorder(nil, nil, container.NewHBox(widget.NewIcon(theme.ComputerIcon()), widget.NewLabelWithStyle("云泊 · Fyne", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})),
 		container.NewHBox(u.connect, background), u.server)
 	u.tabs = container.NewAppTabs(container.NewTabItemWithIcon("全部文件", theme.FolderIcon(), u.filesView()), container.NewTabItemWithIcon("传输中心", theme.DownloadIcon(), u.transfersView()))
+	u.tabs.OnSelected = func(tab *container.TabItem) {
+		if tab == u.tabs.Items[0] && u.connection != nil && !u.busy && !u.closing.Load() {
+			u.loadDir(u.dir, u.page)
+		}
+	}
 	u.Window.SetContent(container.NewBorder(header, u.status, nil, nil, u.tabs))
 	if desktopApp, ok := application.(desktop.App); ok {
 		desktopApp.SetSystemTrayIcon(application.Icon())
 		desktopApp.SetSystemTrayWindow(u.Window)
-		desktopApp.SetSystemTrayMenu(fyne.NewMenu("云泊",
+		desktopApp.SetSystemTrayMenu(fyne.NewMenu("云泊 Fyne",
 			fyne.NewMenuItem("显示主窗口", func() { u.Window.Show(); u.Window.RequestFocus() }),
 			fyne.NewMenuItem("收进后台", u.Window.Hide),
 			fyne.NewMenuItem("打开配置目录", u.openConfig),

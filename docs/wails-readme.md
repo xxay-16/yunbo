@@ -4,7 +4,7 @@
 
 云泊（Yunbo）是独立客户端，通过 HTTP API 与 [OpenList](https://github.com/OpenListTeam/OpenList) 通信，不包含 OpenList 服务端或存储驱动，与 OpenList Team 无官方关联。
 
-![云泊 · Yunbo 文件管理界面](docs/images/preview.png)
+![云泊 · Yunbo 文件管理界面](images/preview.png)
 
 截图使用本地测试服务中的示例目录。
 
