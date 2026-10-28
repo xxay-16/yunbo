@@ -7,7 +7,7 @@ try {
     $version = (Get-Content -LiteralPath 'wails.json' -Raw | ConvertFrom-Json).info.productVersion
     if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid productVersion in wails.json.' }
     $stem = "yunbo-$version-windows-amd64"
-    wails build -skipembedcreate -trimpath -platform windows/amd64 -o yunbo.exe -nsis
+    wails build -tags wails -skipembedcreate -trimpath -platform windows/amd64 -o yunbo.exe -nsis
     if ($LASTEXITCODE -ne 0) { throw 'Wails Windows installer build failed.' }
     $installer = 'build\bin\yunbo-amd64-installer.exe'
     if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'NSIS did not generate an installer.' }

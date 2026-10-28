@@ -1,0 +1,6 @@
+[Details]
+Icon = "build/appicon.png"
+Name = "Yunbo Fyne"
+ID = "io.github.xxay16.yunbo.fyne"
+Version = "0.4.0"
+Build = 1

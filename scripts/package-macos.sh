@@ -14,7 +14,7 @@ fi
 export MACOSX_DEPLOYMENT_TARGET=13.0
 export CGO_CFLAGS="-mmacosx-version-min=13.0"
 export CGO_LDFLAGS="-mmacosx-version-min=13.0"
-wails build -skipembedcreate -trimpath -platform darwin/universal -o yunbo
+wails build -tags wails -skipembedcreate -trimpath -platform darwin/universal -o yunbo
 
 app="build/bin/yunbo.app"
 test -d "$app"
